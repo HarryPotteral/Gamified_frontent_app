@@ -1,7 +1,7 @@
 // api.js – VNG LearnZoo Frontend API Service
 // Replace with your actual backend URL
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://gamified-backend-app.onrender.com/api';
 // Helper to get auth token from localStorage
 function getToken() {
   return localStorage.getItem('lz_token');
