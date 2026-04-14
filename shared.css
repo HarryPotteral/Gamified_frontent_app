@@ -1,0 +1,29 @@
+/* shared.css – common styles for VNG LearnZoo */
+:root {
+  --bg: #0a0c15;
+  --surface: #0d1020;
+  --card: #12162a;
+  --card2: #181e35;
+  --bdr: rgba(255,255,255,0.06);
+  --bdr2: rgba(255,255,255,0.12);
+  --txt: #e8edff;
+  --soft: #8b93b8;
+  --muted: #4a5178;
+  --primary: #5b8fff;
+  --primary2: #7aa8ff;
+  --purple: #a97cff;
+  --green: #00e5a8;
+  --accent: #ff5e9e;
+  --font-display: 'Unbounded', 'Fredoka One', cursive;
+  --font-body: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--txt);
+  min-height: 100vh;
+}
+
+/* Add any other reusable styles here */
