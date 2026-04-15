@@ -6,6 +6,7 @@
 <title>VNG LearnZoo — Sign In</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
+/* ... all existing styles remain exactly the same ... */
 * {
   margin: 0;
   padding: 0;
@@ -320,6 +321,23 @@ body::before {
   display: none;
 }
 
+/* Network status indicator */
+.network-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #4a5178;
+}
+.network-status.offline {
+  color: #ff8c42;
+}
+.network-status.online {
+  color: #00e5a8;
+}
+
 /* Grade-specific colors */
 .grade-btn[data-grade="6"]:hover { border-color: #ff6b35; }
 .grade-btn[data-grade="7"]:hover { border-color: #00d2ff; }
@@ -352,6 +370,12 @@ body::before {
     <span class="logo-text">VNG LearnZoo</span>
   </div>
   <div class="logo-sub">Grades 6-12 · 112 Games · Descriptive MCQ</div>
+
+  <!-- Network status indicator (added) -->
+  <div id="networkStatus" class="network-status">
+    <span id="networkIcon">📶</span>
+    <span id="networkText">Checking connection...</span>
+  </div>
 
   <div class="tabs">
     <button class="tab active" id="loginTab" onclick="switchTab('login')">Log In</button>
@@ -423,16 +447,35 @@ body::before {
   </div>
 </div>
 
-<!-- Include the API service module -->
+<!-- Include the offline-ready API service module -->
 <script src="api.js"></script>
 <script>
 // ============================================
-// LOGIN PAGE – REAL API INTEGRATION
+// LOGIN PAGE – OFFLINE-READY
 // ============================================
 
 let currentRole = 'student';
 let selectedGrade = 6;
 let currentTab = 'login';
+
+// Network status UI update
+function updateNetworkStatus() {
+  const statusEl = document.getElementById('networkStatus');
+  const iconEl = document.getElementById('networkIcon');
+  const textEl = document.getElementById('networkText');
+  if (navigator.onLine) {
+    statusEl.className = 'network-status online';
+    iconEl.textContent = '🌐';
+    textEl.textContent = 'Online – syncing enabled';
+  } else {
+    statusEl.className = 'network-status offline';
+    iconEl.textContent = '📴';
+    textEl.textContent = 'Offline – local mode active';
+  }
+}
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+updateNetworkStatus();
 
 // Default select Grade 6
 document.addEventListener('DOMContentLoaded', function() {
@@ -495,7 +538,7 @@ function hideError() {
 }
 
 // ============================================
-// HANDLE LOGIN / SIGNUP VIA API
+// HANDLE LOGIN / SIGNUP VIA API (with offline awareness)
 // ============================================
 async function handleSubmit() {
   const email = document.getElementById('email').value.trim();
@@ -520,16 +563,17 @@ async function handleSubmit() {
   
   const submitBtn = document.getElementById('submitBtn');
   submitBtn.disabled = true;
-  submitBtn.textContent = '⏳ Connecting...';
+  
+  // Show appropriate loading text based on network
+  const loadingText = navigator.onLine ? '⏳ Connecting...' : '📴 Offline login...';
+  submitBtn.textContent = loadingText;
   
   try {
     let user;
     
     if (currentTab === 'login') {
-      // Login
       user = await API.login(email, password, currentRole, currentRole === 'student' ? selectedGrade : undefined);
     } else {
-      // Signup
       const firstName = document.getElementById('firstName')?.value.trim() || '';
       const lastName = document.getElementById('lastName')?.value.trim() || '';
       const fullName = lastName ? `${firstName} ${lastName}` : firstName || 'Student';
@@ -548,7 +592,6 @@ async function handleSubmit() {
     if (user.role === 'teacher') {
       window.location.href = 'staff-dashboard.html';
     } else {
-      // Student: go to grade dashboard
       const dashboardMap = {
         6: 'grade6-dashboard.html',
         7: 'grade7-dashboard.html',
@@ -558,17 +601,26 @@ async function handleSubmit() {
         11: 'grade11-dashboard.html',
         12: 'grade12-dashboard.html'
       };
-      
       const targetPage = dashboardMap[user.grade] || 'grade6-dashboard.html';
       window.location.href = targetPage;
     }
   } catch (error) {
-    showError(`❌ ${error.message}`);
+    // Enhanced error messaging for offline scenarios
+    let errorMsg = error.message;
+    if (!navigator.onLine) {
+      if (currentTab === 'login') {
+        errorMsg = '📴 You are offline. Login will work only if you have logged in before on this device.';
+      } else {
+        errorMsg = '📴 You are offline. Signing up will create a local account that syncs later.';
+      }
+    } else if (error.message.includes('offline') || error.message.includes('Failed to fetch')) {
+      errorMsg = '⚠️ Network issue. Trying offline mode...';
+    }
+    showError(`❌ ${errorMsg}`);
     submitBtn.disabled = false;
     submitBtn.textContent = currentTab === 'login' ? '🚀 Log In' : '🚀 Create Account';
   }
 }
-
 </script>
 </body>
 </html>
