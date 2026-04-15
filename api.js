@@ -1,4 +1,4 @@
-// api.js – VNG LearnZoo Frontend API Service (Offline-Ready)
+// api.js – VNG LearnZoo Frontend API Service (Offline-Ready, Fixed)
 const API_BASE = 'https://gamified-backend-app.onrender.com/api';
 
 // Helper: get offline users database
@@ -10,7 +10,7 @@ function saveOfflineUsers(users) {
   localStorage.setItem('lz_offline_users', JSON.stringify(users));
 }
 
-// Simple hash for demo (DO NOT use in production; use bcrypt on server)
+// Simple hash for offline validation (SHA-256)
 async function hashPassword(pwd) {
   const encoder = new TextEncoder();
   const data = encoder.encode(pwd);
@@ -18,59 +18,36 @@ async function hashPassword(pwd) {
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Get token (works offline)
+// Store user credentials offline (call after successful online login/signup)
+async function storeOfflineCredential(user, plainPassword) {
+  try {
+    const users = getOfflineUsers();
+    const hashed = await hashPassword(plainPassword);
+    users[user.email] = {
+      id: user.id || user._id,
+      name: user.name,
+      email: user.email,
+      passwordHash: hashed,
+      role: user.role,
+      grade: user.grade,
+      xp: user.xp || 0,
+      streak: user.streak || 0,
+      gamesPlayed: user.gamesPlayed || 0
+    };
+    saveOfflineUsers(users);
+    console.log('✅ Offline credentials saved for', user.email);
+  } catch (e) {
+    console.error('Failed to save offline credentials:', e);
+  }
+}
+
 function getToken() {
   return localStorage.getItem('lz_token');
 }
 
-// Helper for authenticated requests with offline fallback
-async function authFetch(endpoint, options = {}) {
-  const token = getToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'API request failed');
-    return data;
-  } catch (error) {
-    // Offline fallback for specific endpoints
-    if (endpoint === '/user/profile' && options.method === 'GET') {
-      const cachedUser = JSON.parse(localStorage.getItem('lz_user') || '{}');
-      if (cachedUser.id) return cachedUser;
-      throw new Error('Not logged in');
-    }
-    if (endpoint === '/game/result' && options.method === 'POST') {
-      // Queue for later sync
-      const body = JSON.parse(options.body);
-      const pending = JSON.parse(localStorage.getItem('pendingGameResults') || '[]');
-      pending.push({ ...body, timestamp: Date.now() });
-      localStorage.setItem('pendingGameResults', JSON.stringify(pending));
-      // Return mock response with updated local stats
-      const user = JSON.parse(localStorage.getItem('lz_user') || '{}');
-      user.xp = (user.xp || 0) + body.xpEarned;
-      user.gamesPlayed = (user.gamesPlayed || 0) + 1;
-      user.streak = (user.streak || 0) + 1;
-      localStorage.setItem('lz_user', JSON.stringify(user));
-      return { xp: user.xp, streak: user.streak, gamesPlayed: user.gamesPlayed };
-    }
-    throw error;
-  }
-}
-
-// ========== AUTH (with offline support) ==========
+// ========== AUTH (with guaranteed offline storage) ==========
 async function login(email, password, role, grade) {
   try {
-    // Try server first
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -78,17 +55,21 @@ async function login(email, password, role, grade) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
+    
     localStorage.setItem('lz_token', data.token);
     localStorage.setItem('lz_user', JSON.stringify(data.user));
+    
+    // ✅ Save offline credentials immediately after successful online login
+    await storeOfflineCredential(data.user, password);
+    
     return data.user;
   } catch (error) {
-    console.warn('Offline login attempt:', error.message);
-    // Offline fallback: check local users database
+    console.warn('Online login failed, trying offline...', error.message);
+    // Offline fallback
     const users = getOfflineUsers();
     const hashed = await hashPassword(password);
     const user = users[email];
     if (user && user.passwordHash === hashed) {
-      // Valid offline login
       const sessionUser = { ...user, passwordHash: undefined };
       localStorage.setItem('lz_token', 'offline-token-' + Date.now());
       localStorage.setItem('lz_user', JSON.stringify(sessionUser));
@@ -100,7 +81,6 @@ async function login(email, password, role, grade) {
 
 async function signup(name, email, password, role, grade) {
   try {
-    // Try server first
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -108,25 +88,16 @@ async function signup(name, email, password, role, grade) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
+    
     localStorage.setItem('lz_token', data.token);
     localStorage.setItem('lz_user', JSON.stringify(data.user));
-    // Also save offline
-    const users = getOfflineUsers();
-    users[email] = {
-      id: data.user.id,
-      name,
-      email,
-      passwordHash: await hashPassword(password),
-      role,
-      grade: role === 'student' ? grade : undefined,
-      xp: 0,
-      streak: 0,
-      gamesPlayed: 0
-    };
-    saveOfflineUsers(users);
+    
+    // ✅ Save offline credentials immediately after successful online signup
+    await storeOfflineCredential(data.user, password);
+    
     return data.user;
   } catch (error) {
-    console.warn('Offline signup attempt:', error.message);
+    console.warn('Online signup failed, creating offline account...', error.message);
     // Offline fallback: create local account
     const users = getOfflineUsers();
     if (users[email]) throw new Error('Email already registered (offline)');
@@ -159,17 +130,44 @@ function logout() {
 
 // ========== USER PROFILE ==========
 async function getUserProfile() {
-  return authFetch('/user/profile');
+  const token = getToken();
+  if (!token) throw new Error('Not logged in');
+  try {
+    const res = await fetch(`${API_BASE}/user/profile`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  } catch (error) {
+    // Offline fallback
+    const cachedUser = JSON.parse(localStorage.getItem('lz_user') || '{}');
+    if (cachedUser.id) return cachedUser;
+    throw error;
+  }
 }
 
 async function updateUserProfile(updates) {
-  // For offline, just update local user
+  const token = getToken();
+  if (!token) throw new Error('Not logged in');
   try {
-    return await authFetch('/user/profile', {
+    const res = await fetch(`${API_BASE}/user/profile`, {
       method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(updates)
     });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    // Update local user
+    const user = JSON.parse(localStorage.getItem('lz_user') || '{}');
+    Object.assign(user, updates);
+    localStorage.setItem('lz_user', JSON.stringify(user));
+    return data;
   } catch (error) {
+    // Offline: update local only
     const user = JSON.parse(localStorage.getItem('lz_user') || '{}');
     Object.assign(user, updates);
     localStorage.setItem('lz_user', JSON.stringify(user));
@@ -179,10 +177,33 @@ async function updateUserProfile(updates) {
 
 // ========== GAME RESULTS ==========
 async function submitGameResult(gameId, score, xpEarned) {
-  return authFetch('/game/result', {
-    method: 'POST',
-    body: JSON.stringify({ gameId, score, xpEarned })
-  });
+  const token = getToken();
+  const body = JSON.stringify({ gameId, score, xpEarned });
+  try {
+    const res = await fetch(`${API_BASE}/game/result`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  } catch (error) {
+    // Queue for later sync
+    const pending = JSON.parse(localStorage.getItem('pendingGameResults') || '[]');
+    pending.push({ gameId, score, xpEarned, timestamp: Date.now() });
+    localStorage.setItem('pendingGameResults', JSON.stringify(pending));
+    // Update local user stats
+    const user = JSON.parse(localStorage.getItem('lz_user') || '{}');
+    user.xp = (user.xp || 0) + xpEarned;
+    user.gamesPlayed = (user.gamesPlayed || 0) + 1;
+    user.streak = (user.streak || 0) + 1;
+    localStorage.setItem('lz_user', JSON.stringify(user));
+    return { xp: user.xp, streak: user.streak, gamesPlayed: user.gamesPlayed };
+  }
 }
 
 // ========== LEADERBOARD ==========
@@ -191,27 +212,49 @@ async function getLeaderboard(grade) {
     const res = await fetch(`${API_BASE}/leaderboard/${grade}`);
     return await res.json();
   } catch (error) {
-    // Offline: return local users sorted by XP
     const users = Object.values(getOfflineUsers()).filter(u => u.role === 'student' && u.grade == grade);
     return users.sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 20);
   }
 }
 
-// ========== TEACHER ENDPOINTS (stub offline) ==========
+// ========== TEACHER ENDPOINTS ==========
 async function getTeacherStudents(grade = null) {
-  return authFetch(`/teacher/students${grade ? `?grade=${grade}` : ''}`);
+  const token = getToken();
+  const url = grade ? `/teacher/students?grade=${grade}` : '/teacher/students';
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return res.json();
 }
 async function getAtRiskStudents(grade = null) {
-  return authFetch(`/teacher/atrisk${grade ? `?grade=${grade}` : ''}`);
+  const token = getToken();
+  const url = grade ? `/teacher/atrisk?grade=${grade}` : '/teacher/atrisk';
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return res.json();
 }
 async function sendNudge(studentId, message) {
-  return authFetch('/teacher/nudge', { method: 'POST', body: JSON.stringify({ studentId, message }) });
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/teacher/nudge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ studentId, message })
+  });
+  return res.json();
 }
 async function getClassStats(grade) {
-  return authFetch(`/teacher/stats/${grade}`);
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/teacher/stats/${grade}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return res.json();
 }
 
-// Export for global access
+// Export
 if (typeof window !== 'undefined') {
   window.API = {
     login, signup, logout,
