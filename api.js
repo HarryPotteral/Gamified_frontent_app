@@ -1,5 +1,23 @@
-// api.js – VNG LearnZoo Frontend API Service (Offline-Ready, Fixed)
+// api.js – VNG LearnZoo Frontend API Service (With Extended Timeout)
 const API_BASE = 'https://gamified-backend-app.onrender.com/api';
+const REQUEST_TIMEOUT = 20000; // 20 seconds for cold starts
+
+// Helper: fetch with timeout
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout – server may be waking up. Please try again.');
+    }
+    throw error;
+  }
+}
 
 // Helper: get offline users database
 function getOfflineUsers() {
@@ -45,21 +63,21 @@ function getToken() {
   return localStorage.getItem('lz_token');
 }
 
-// ========== AUTH (with guaranteed offline storage) ==========
+// ========== AUTH (with extended timeout) ==========
 async function login(email, password, role, grade) {
   try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await fetchWithTimeout(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, role, grade })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    if (!res.ok) throw new Error(data.error || 'Login failed');
     
     localStorage.setItem('lz_token', data.token);
     localStorage.setItem('lz_user', JSON.stringify(data.user));
     
-    // ✅ Save offline credentials immediately after successful online login
+    // Save offline credentials immediately after successful online login
     await storeOfflineCredential(data.user, password);
     
     return data.user;
@@ -75,24 +93,26 @@ async function login(email, password, role, grade) {
       localStorage.setItem('lz_user', JSON.stringify(sessionUser));
       return sessionUser;
     }
-    throw new Error('Invalid email or password (and offline)');
+    throw new Error(error.message.includes('timeout') ? 
+      'Server is waking up. Please wait a moment and try again.' : 
+      'Invalid email or password (and offline)');
   }
 }
 
 async function signup(name, email, password, role, grade) {
   try {
-    const res = await fetch(`${API_BASE}/auth/register`, {
+    const res = await fetchWithTimeout(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password, role, grade })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    if (!res.ok) throw new Error(data.error || 'Signup failed');
     
     localStorage.setItem('lz_token', data.token);
     localStorage.setItem('lz_user', JSON.stringify(data.user));
     
-    // ✅ Save offline credentials immediately after successful online signup
+    // Save offline credentials immediately after successful online signup
     await storeOfflineCredential(data.user, password);
     
     return data.user;
@@ -133,7 +153,7 @@ async function getUserProfile() {
   const token = getToken();
   if (!token) throw new Error('Not logged in');
   try {
-    const res = await fetch(`${API_BASE}/user/profile`, {
+    const res = await fetchWithTimeout(`${API_BASE}/user/profile`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -151,7 +171,7 @@ async function updateUserProfile(updates) {
   const token = getToken();
   if (!token) throw new Error('Not logged in');
   try {
-    const res = await fetch(`${API_BASE}/user/profile`, {
+    const res = await fetchWithTimeout(`${API_BASE}/user/profile`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -161,13 +181,11 @@ async function updateUserProfile(updates) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    // Update local user
     const user = JSON.parse(localStorage.getItem('lz_user') || '{}');
     Object.assign(user, updates);
     localStorage.setItem('lz_user', JSON.stringify(user));
     return data;
   } catch (error) {
-    // Offline: update local only
     const user = JSON.parse(localStorage.getItem('lz_user') || '{}');
     Object.assign(user, updates);
     localStorage.setItem('lz_user', JSON.stringify(user));
@@ -180,7 +198,7 @@ async function submitGameResult(gameId, score, xpEarned) {
   const token = getToken();
   const body = JSON.stringify({ gameId, score, xpEarned });
   try {
-    const res = await fetch(`${API_BASE}/game/result`, {
+    const res = await fetchWithTimeout(`${API_BASE}/game/result`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -209,7 +227,7 @@ async function submitGameResult(gameId, score, xpEarned) {
 // ========== LEADERBOARD ==========
 async function getLeaderboard(grade) {
   try {
-    const res = await fetch(`${API_BASE}/leaderboard/${grade}`);
+    const res = await fetchWithTimeout(`${API_BASE}/leaderboard/${grade}`);
     return await res.json();
   } catch (error) {
     const users = Object.values(getOfflineUsers()).filter(u => u.role === 'student' && u.grade == grade);
@@ -221,7 +239,7 @@ async function getLeaderboard(grade) {
 async function getTeacherStudents(grade = null) {
   const token = getToken();
   const url = grade ? `/teacher/students?grade=${grade}` : '/teacher/students';
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetchWithTimeout(`${API_BASE}${url}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   return res.json();
@@ -229,14 +247,14 @@ async function getTeacherStudents(grade = null) {
 async function getAtRiskStudents(grade = null) {
   const token = getToken();
   const url = grade ? `/teacher/atrisk?grade=${grade}` : '/teacher/atrisk';
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetchWithTimeout(`${API_BASE}${url}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   return res.json();
 }
 async function sendNudge(studentId, message) {
   const token = getToken();
-  const res = await fetch(`${API_BASE}/teacher/nudge`, {
+  const res = await fetchWithTimeout(`${API_BASE}/teacher/nudge`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -248,7 +266,7 @@ async function sendNudge(studentId, message) {
 }
 async function getClassStats(grade) {
   const token = getToken();
-  const res = await fetch(`${API_BASE}/teacher/stats/${grade}`, {
+  const res = await fetchWithTimeout(`${API_BASE}/teacher/stats/${grade}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   return res.json();
