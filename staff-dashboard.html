@@ -373,51 +373,6 @@ body {
   color: var(--red);
   margin-top: 4px;
 }
-/* Quest & Quiz Cards */
-.quest-grid, .quiz-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-.qz-card {
-  background: var(--card);
-  border: 1px solid var(--bdr);
-  border-radius: 18px;
-  padding: 18px;
-  transition: all 0.2s;
-}
-.qz-card:hover {
-  border-color: var(--purple);
-  transform: translateY(-2px);
-}
-.qz-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.qz-icon { font-size: 28px; }
-.qz-tag {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 20px;
-}
-.qz-title { font-weight: 800; font-size: 15px; margin-bottom: 5px; }
-.qz-meta { font-size: 12px; color: var(--soft); margin-bottom: 12px; }
-.qz-actions {
-  display: flex;
-  gap: 8px;
-}
-.qz-btn {
-  flex: 1;
-  padding: 8px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  text-align: center;
-  transition: 0.2s;
-}
 /* Leaderboard */
 .leaderboard-list {
   max-width: 600px;
@@ -552,12 +507,6 @@ body {
     <div class="nav-item" data-section="atrisk">
       <span class="nav-icon">🚨</span> <span>At-Risk</span>
       <span class="nav-badge" id="atriskCountBadge">0</span>
-    </div>
-    <div class="nav-item" data-section="quests">
-      <span class="nav-icon">⚔️</span> <span>Quest Builder</span>
-    </div>
-    <div class="nav-item" data-section="quiz">
-      <span class="nav-icon">🧩</span> <span>Quiz Editor</span>
     </div>
     <div class="nav-item" data-section="leaderboard">
       <span class="nav-icon">🏆</span> <span>Leaderboard</span>
@@ -721,8 +670,6 @@ function renderCurrentSection() {
   if (activeSection === 'dashboard') renderDashboard();
   else if (activeSection === 'students') renderStudents();
   else if (activeSection === 'atrisk') renderAtRisk();
-  else if (activeSection === 'quests') renderQuests();
-  else if (activeSection === 'quiz') renderQuiz();
   else if (activeSection === 'leaderboard') renderLeaderboard();
 }
 
@@ -771,15 +718,6 @@ function renderDashboard() {
     </div>
   `).join('') || '<div style="color:var(--soft);">No students yet</div>';
   
-  const questsHtml = subjects.map(sub => `
-    <div class="qz-card" style="margin-bottom:10px;">
-      <div class="qz-header"><span class="qz-icon">${sub.ico}</span><span class="qz-tag" style="background:${sub.color}22; color:${sub.color}">${sub.name}</span></div>
-      <div class="qz-title">${sub.name} Quest</div>
-      <div class="qz-meta">${Math.floor(totalStudents * 0.7)}/${totalStudents} completed</div>
-      <div class="qz-actions"><button class="qz-btn btn-outline" onclick="alert('Edit ${sub.name} quest')">✏️ Edit</button></div>
-    </div>
-  `).join('');
-  
   const html = `
     ${statsHtml}
     <div class="two-col">
@@ -788,7 +726,7 @@ function renderDashboard() {
     </div>
     <div class="two-col-equal">
       <div class="perf-bars"><h3 style="margin-bottom:12px;">🏆 Top Performers</h3>${topHtml}</div>
-      <div class="perf-bars"><h3 style="margin-bottom:12px;">⚔️ Active Quests</h3>${questsHtml}</div>
+      <div class="perf-bars"><h3 style="margin-bottom:12px;">📋 Recent Activity</h3><div style="color:var(--soft); text-align:center; padding:20px;">Coming soon</div></div>
     </div>
   `;
   document.getElementById('contentArea').innerHTML = html;
@@ -913,48 +851,6 @@ function renderAtRisk() {
             <button class="btn btn-outline" style="flex:1;" onclick="viewStudentDetail('${s._id}')">👁 View</button>
             <button class="btn btn-primary" style="flex:1;" onclick="nudgeStudent('${s._id}', '${s.name}')">📩 Nudge</button>
           </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-  document.getElementById('contentArea').innerHTML = html;
-}
-
-// ========== RENDER QUESTS (Placeholder - can be extended) ==========
-function renderQuests() {
-  const html = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <h2>⚔️ Quest Builder · Grade ${currentGrade}</h2>
-      <button class="btn btn-primary" onclick="alert('Create new quest')">+ Create Quest</button>
-    </div>
-    <div class="quest-grid">
-      ${currentData.subjects.map(sub => `
-        <div class="qz-card">
-          <div class="qz-header"><span class="qz-icon">${sub.ico}</span><div class="qz-tag" style="background:${sub.color}22; color:${sub.color}">${sub.name}</div></div>
-          <div class="qz-title">${sub.name} Challenge</div>
-          <div class="qz-meta">${Math.floor(currentData.students.length * 0.7)}/${currentData.students.length} completed</div>
-          <div class="qz-actions"><button class="qz-btn btn-outline" onclick="alert('Edit ${sub.name} quest')">✏️ Edit</button><button class="qz-btn btn-outline" onclick="alert('Delete ${sub.name} quest')">🗑 Delete</button></div>
-        </div>
-      `).join('')}
-    </div>
-  `;
-  document.getElementById('contentArea').innerHTML = html;
-}
-
-// ========== RENDER QUIZ (Placeholder) ==========
-function renderQuiz() {
-  const html = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <h2>🧩 Quiz Editor · Grade ${currentGrade}</h2>
-      <button class="btn btn-primary" onclick="alert('Create new quiz')">+ Create Quiz</button>
-    </div>
-    <div class="quiz-grid">
-      ${currentData.subjects.map(sub => `
-        <div class="qz-card">
-          <div class="qz-header"><span class="qz-icon">${sub.ico}</span><div class="qz-tag" style="background:${sub.color}22; color:${sub.color}">${sub.name}</div></div>
-          <div class="qz-title">${sub.name} — Chapter Quiz</div>
-          <div class="qz-meta">${Math.floor(currentData.students.length * 0.85)}/${currentData.students.length} attempted · Avg: ${sub.avg}%</div>
-          <div class="qz-actions"><button class="qz-btn btn-outline" onclick="alert('Edit ${sub.name} quiz')">✏️ Edit</button><button class="qz-btn btn-outline" onclick="alert('View results')">📊 Results</button></div>
         </div>
       `).join('')}
     </div>
